@@ -528,11 +528,17 @@ class CloudPickler(Pickler):
         write(pickle.REDUCE)
         self.memoize(func)
 
+        # The following hack is to keep these pickles compatible with versions
+        # 0.4.0 and prior. Because _fill_function has a fixed number of 5
+        # arguments there we cannot add additional arguments and we cannot
+        # fundamentally change the type of arguments. So we abuse the globals
+        # dict as an additional namespace to hide a new argument.
+        f_globals['__cpkl_mod'] = func.__module__
+
         # save the rest of the func data needed by _fill_function
         save(f_globals)
         save(defaults)
         save(dct)
-        save(func.__module__)
         save(closure_values)
         write(pickle.TUPLE)
         write(pickle.REDUCE)  # applies _fill_function on the tuple
@@ -945,11 +951,16 @@ class _empty_cell_value(object):
 
 def _fill_function(*args):
     if len(args) == 5:
-        # Backwards compat for cloudpickle v0.4.0, after which the `module`
-        # argument  was introduced
-        updated_args = args[:-1] + (None, args[-1],)
-        return _fill_function_internal(*updated_args)
+        func, globals, defaults, dict, closure_values = args
+        module = None
+        if globals is not None:
+            module = globals.pop('__cpkl_mod', None)
+        return _fill_function_internal(func, globals, defaults, dict, module,
+            closure_values)
     else:
+        # Compatibility for pickles from version 0.4.2 where briefly the
+        # module argument was separate (breaking compatibility with other
+        # versions at the time).
         return _fill_function_internal(*args)
 
 
